@@ -8,6 +8,7 @@ ESCAPED_TIMETRACKER_DIR=$(echo $TIMETRACKER_DIR | sed 's/\//\\\//g')
 mkdir -p $TIMETRACKER_DIR/logs/raw
 mkdir -p $TIMETRACKER_DIR/logs/processed
 
+# --------------   com.github.deaktator.timetracker.collector   --------------
 COLLECTOR_JOB=com.github.deaktator.timetracker.collector
 COLLECTOR_LAUNCHD_LOCAL=${TIMETRACKER_DIR}/LaunchAgents/${COLLECTOR_JOB}.plist
 COLLECTOR_LAUNCHD=$HOME/Library/LaunchAgents/${COLLECTOR_JOB}.plist
@@ -21,4 +22,8 @@ cat $COLLECTOR_LAUNCHD_LOCAL \
 > $COLLECTOR_LAUNCHD
 
 launchctl load $COLLECTOR_LAUNCHD
+# --------------   com.github.deaktator.timetracker.collector   --------------
 
+# -------------   com.github.deaktator.timetracker.aggregator   --------------
+# TODO: Add
+# -------------   com.github.deaktator.timetracker.aggregator   --------------
