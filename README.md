@@ -8,7 +8,6 @@ Creates some launchd jobs to track user power state as an indicator of usage.
 ```bash
 git clone https://github.com/deaktator/timetracker.git
 cd timetracker
-chmod +x install.sh
 ./install.sh
 ```
 
