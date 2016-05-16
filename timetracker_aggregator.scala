@@ -56,12 +56,14 @@ sealed trait Interval {
   def closeWith(end: Date) = ClosedInterval(start, end)
   def includes(date: Date, thresh: Int = Constants.AggTolerance): Boolean
 }
+
 case class ClosedInterval(start: Date, end: Date) extends Interval {
   /** Return new ClosedInterval with start and end = end + Constants.CollectInterval. */
   def close = closeWith(new Date(end.getTime + Constants.CollectInterval))
   def includes(date: Date, thresh: Int = Constants.AggTolerance): Boolean =
     date.getTime - end.getTime < thresh
 }
+
 case class OpenInterval(start: Date) extends Interval {
   /** Create a ClosedInterval with start and end = start + Constants.CollectInterval. */
   def close = closeWith(new Date(start.getTime + Constants.CollectInterval))
@@ -76,49 +78,75 @@ object TimetrackerAggregator {
   val FileDateFormat = new SimpleDateFormat("yyyyMMdd")
   val AcceptablePowerStates = Set(PowerState.Working, PowerState.PowerOnSuspend)
 
-  def main(args: Array[String]) {
+  /**
+   * Main entry point to script.
+   * @param args
+   */
+  def main(args: Array[String]): Unit = {
+    val date = new Date
     val rawDir = new File(args(0))
     val processedDir = new File(args(1))
-    val date = FileDateFormat.format(new Date())
+    val deleteRaw = if (3 == args.length) args(2).toBoolean else false
+    process(rawDir, processedDir, date, deleteRaw)
+  }
+
+  def aggregatePreviousData(rawDir: File, date: Date): Iterator[(File, String)] = {
+    val dateStr = FileDateFormat.format(date)
 
     val rawLogs = rawDir.listFiles().filter { f =>
       val name = f.getName
-      name < date && name.matches(FileNameFormat)
-    }
+      name < dateStr && name.matches(FileNameFormat)
+    }.toIterator
 
-    rawLogs foreach { f =>
-      writeAggregatedFile(f, processedDir)
-      // f.delete()
-    }
+    rawLogs.map { f => (f, getAggContent(f)) }
   }
 
-  def writeAggregatedFile(in: File, processedDir: File): Unit = {
-    val lines = aggregateLines(Source.fromFile(in).getLines())
-    val outFile = new File(processedDir, in.getName)
-    outFile.delete()
-    val out = new PrintWriter(new FileWriter(outFile, false))
-    lines.foreach {
-      case ClosedInterval(s, e) => out.println(s"${Line.DateFormat.format(s)}\t${Line.DateFormat.format(e)}")
-      case i => throw new IllegalStateException(s"All intervals should be closed.  Found $i.")
-    }
-    out.close()
-  }
-
-  def aggregateLines(in: TraversableOnce[String]): List[Interval] = {
+  def aggregateRaw(in: TraversableOnce[String]): List[Interval] = {
     val lines = in.toIterator.
-                   collect { case s if s matches TimeStampFormat => Line(s) }.
-                   collect { case s if AcceptablePowerStates contains s.powerState => s.date }
+      collect { case s if s matches TimeStampFormat => Line(s) }.
+      collect { case s if AcceptablePowerStates contains s.powerState => s.date }
 
     val intervals = lines.foldLeft(List.empty[Interval]){
       case (Nil, d)                        => List(OpenInterval(d))
       case (i :: rest, d) if i.includes(d) => i.closeWith(d) :: rest
       case (i :: rest, d)                  => OpenInterval(d) :: i.close :: rest
     }
-    
+
     (intervals match {
       case (i: Interval) :: rest => i.close :: rest // close the last interval.
       case d => d
     }).reverse
+  }
+
+  def getAggContent(in: File): String = {
+    val lines = aggregateRaw(Source.fromFile(in).getLines())
+    lines.collect { case ClosedInterval(s, e) => s"${Line.DateFormat.format(s)}\t${Line.DateFormat.format(e)}" }.
+      mkString("\n")
+  }
+
+  // vvvvv  Impure function  vvvvv
+
+  /**
+    * Aggregate over all old raw files and created aggregated files.
+    * @param rawDir directory with raw data
+    * @param processedDir directory with aggregated data
+    * @param date a date used for comparison.  We data data not from today.
+    * @param deleteRaw whether to delete the raw data when done.
+    */
+  def process(rawDir: File, processedDir: File, date: Date, deleteRaw: Boolean = false) = {
+    aggregatePreviousData(rawDir, date) foreach { case (in, data) =>
+      writeAggregatedFile(in, data, processedDir)
+      if (deleteRaw)
+        in.delete()
+    }
+  }
+
+  def writeAggregatedFile(in: File, data: String, processedDir: File): Unit = {
+    val outFile = new File(processedDir, in.getName)
+    outFile.delete()
+    val out = new PrintWriter(new FileWriter(outFile, false))
+    out.println(data)
+    out.close()
   }
 }
 
