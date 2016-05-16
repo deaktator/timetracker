@@ -62,6 +62,8 @@ case class ClosedInterval(start: Date, end: Date) extends Interval {
   def close = closeWith(new Date(end.getTime + Constants.CollectInterval))
   def includes(date: Date, thresh: Int = Constants.AggTolerance): Boolean =
     date.getTime - end.getTime < thresh
+  override def toString: String = s"${Line.DateFormat.format(start)}\t${Line.DateFormat.format(end)}"
+  def durationMillis = end.getTime - start.getTime
 }
 
 case class OpenInterval(start: Date) extends Interval {
@@ -101,7 +103,7 @@ object TimetrackerAggregator {
     rawLogs.map { f => (f, getAggContent(f)) }
   }
 
-  def aggregateRaw(in: TraversableOnce[String]): List[Interval] = {
+  def aggregateRaw(in: TraversableOnce[String]): List[ClosedInterval] = {
     val lines = in.toIterator.
       collect { case s if s matches TimeStampFormat => Line(s) }.
       collect { case s if AcceptablePowerStates contains s.powerState => s.date }
@@ -115,13 +117,22 @@ object TimetrackerAggregator {
     (intervals match {
       case (i: Interval) :: rest => i.close :: rest // close the last interval.
       case d => d
-    }).reverse
+    }).collect{ case i: ClosedInterval => i }.reverse
   }
 
   def getAggContent(in: File): String = {
-    val lines = aggregateRaw(Source.fromFile(in).getLines())
-    lines.collect { case ClosedInterval(s, e) => s"${Line.DateFormat.format(s)}\t${Line.DateFormat.format(e)}" }.
-      mkString("\n")
+    val intervals = aggregateRaw(Source.fromFile(in).getLines())
+
+    if (intervals.nonEmpty) {
+      val (time, log) = intervals.foldLeft((0L, "")) {
+        case ((ms, s), i) => (ms + i.durationMillis, s"$s\n$i")
+      }
+
+      val total = ClosedInterval(intervals.head.start, intervals.last.end).toString
+      val hours = time / 3600000f
+      s"hours: $hours\ntotal: $total$log"
+    }
+    else "hours: 0"
   }
 
   // vvvvv  Impure function  vvvvv
